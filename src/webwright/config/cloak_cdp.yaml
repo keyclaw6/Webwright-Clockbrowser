@@ -1,0 +1,74 @@
+# CloakBrowser CDP modifier (combine Path 2 — out-of-process via cloakserve).
+#
+# Webwright's local_cdp mode already attaches to an external browser over the
+# Chrome DevTools Protocol. CloakBrowser ships `cloakserve`, a stealth-Chromium
+# CDP server on :9222 — the exact endpoint local_cdp expects. So the combine
+# here is almost pure config: point Webwright at cloakserve.
+#
+# 1. Start the stealth CDP server (Docker is easiest):
+#
+#      docker run -d --name cloak -p 127.0.0.1:9222:9222 \
+#        cloakhq/cloakbrowser cloakserve --headless=false
+#
+#    ...or from a local install:  cloakserve
+#
+# 2. Run Webwright against it:
+#
+#      python -m webwright.run.cli \
+#        -c base.yaml -c cloak_cdp.yaml -c model_claude.yaml \
+#        -t "Open https://browserscan.net/bot-detection and report the verdict"
+#
+# Per-connection fingerprint seeds + proxy/geoip are selectable via query params
+# on the CDP URL, e.g.:
+#   local_cdp_url: "http://127.0.0.1:9222?fingerprint=11111&proxy=http://user:pass@host:port&geoip=true"
+#
+# CAVEAT — humanize over CDP: the C++ fingerprint patches travel over CDP for
+# free (they're compiled into the binary cloakserve runs), but `humanize`
+# (mouse/keyboard/scroll mimicry) is a wrapper-level feature that does NOT cross
+# the CDP boundary. Webwright acts through the Playwright API (page.click /
+# page.fill), not raw coordinates, so this matters mainly for the very hardest
+# behavioral-detection sites. If you need humanization too, prefer Path 1
+# (cloak_browser.yaml, in-process) or apply CloakBrowser's humanize patch to the
+# connected browser in a custom environment subclass.
+
+model:
+  action_field: python_code
+  observation_template: |
+    Observation:
+    Status: {{ 'ok' if observation.success else 'error' }}
+    URL: {{ observation.url }}
+    Title: {{ observation.title }}
+    {% if observation.exception %}Exception:
+    {{ observation.exception }}
+    {% endif %}{% if observation.python_output %}Python output:
+    {{ observation.python_output }}
+    {% endif %}{% if observation.console_output %}Console output:
+    {{ observation.console_output }}
+    {% endif %}{% if observation.aria_snapshot %}ARIA snapshot:
+    {{ observation.aria_snapshot }}
+    {% endif %}{% if observation.screenshot_path %}Screenshot path: {{ observation.screenshot_path }}
+    {% endif %}
+  format_error_template: |
+    Format error:
+
+    {{ error }}
+
+    Please respond with a single strict JSON object (no prose, no code fences) containing exactly these fields:
+    {
+      "thought": "<short reasoning about the next step>",
+      "python_code": "<exactly one async Python browser step, or empty string when declaring done>",
+      "done": false,
+      "final_response": ""
+    }
+
+environment:
+  environment_class: local_browser
+  browser_mode: local_cdp
+  # cloakserve owns the browser process — do NOT let Webwright launch its own.
+  local_cdp_auto_start: false
+  local_cdp_url: "http://127.0.0.1:9222"
+  local_cdp_new_page: true
+
+agent:
+  require_self_reflection_success: false
+  keep_last_n_observations: 1

@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "webwright-clockbrowser"
+version = "0.1.0"
+description = "Webwright-Clockbrowser: Webwright's code-as-action web-agent harness driving CloakBrowser's stealth Chromium"
+requires-python = ">=3.10"
+dependencies = [
+    "httpx>=0.27",
+    "jinja2>=3.1",
+    "pydantic>=2.5",
+    "pyyaml>=6.0",
+    "rich>=13.0",
+    "typer>=0.12",
+    "playwright>=1.45",
+    "python-dotenv>=1.0",
+    "platformdirs>=4.0",
+    # The combine: CloakBrowser supplies the stealth Chromium binary + humanize.
+    # Pinned as an upstream dependency (not vendored) so its auto-updating
+    # stealth binary stays current — its single most important feature.
+    "cloakbrowser>=0.3",
+]
+
+[project.optional-dependencies]
+# Auto-detect timezone/locale from a proxy's exit IP (CloakBrowser geoip extra).
+geoip = ["cloakbrowser[geoip]>=0.3"]
+
+[project.scripts]
+webwright = "webwright.run.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+webwright = ["config/*.yaml", "config/**/*.yaml"]

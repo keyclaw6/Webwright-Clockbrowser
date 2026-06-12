@@ -1,0 +1,96 @@
+# CloakBrowser stealth live-browser modifier (combine Path 1 — in-process).
+#
+# Stack it like the stock local_browser.yaml, but instead of a vanilla
+# Playwright Chromium it launches CloakBrowser's stealth binary IN-PROCESS,
+# so the agent's live loop inherits BOTH source-level fingerprint stealth and
+# behavioral humanization (mouse Bezier curves, per-character typing, scroll):
+#
+#   python -m webwright.run.cli \
+#     -c base.yaml -c cloak_browser.yaml -c model_claude.yaml \
+#     -t "Open https://bot.incolumitas.com and report the detection verdict"
+#
+# Requires:  pip install cloakbrowser   (binary auto-downloads on first launch)
+#
+# What the agent sees each step is identical to local_browser.yaml (URL, title,
+# stdout, console, ARIA snapshot, screenshot path). The ONLY thing that changes
+# is the browser binary underneath — stealth is transparent to the agent loop.
+#
+# For protected sites, add a residential proxy + geoip and run headed:
+#   environment:
+#     cloak_proxy: "http://user:pass@residential-host:port"
+#     cloak_geoip: true
+#     headless: false   # some sites still flag headless even with C++ patches
+
+model:
+  action_field: python_code
+  # Screenshots stay text-path-only by default (vision on demand). Flip
+  # attach_observation_screenshot: true to feed the PNG as a real image input.
+  observation_template: |
+    Observation:
+    Status: {{ 'ok' if observation.success else 'error' }}
+    URL: {{ observation.url }}
+    Title: {{ observation.title }}
+    {% if observation.exception %}Exception:
+    {{ observation.exception }}
+    {% endif %}{% if observation.python_output %}Python output:
+    {{ observation.python_output }}
+    {% endif %}{% if observation.console_output %}Console output:
+    {{ observation.console_output }}
+    {% endif %}{% if observation.aria_snapshot %}ARIA snapshot:
+    {{ observation.aria_snapshot }}
+    {% endif %}{% if observation.screenshot_path %}Screenshot path: {{ observation.screenshot_path }}
+    {% endif %}
+  format_error_template: |
+    Format error:
+
+    {{ error }}
+
+    Please respond with a single strict JSON object (no prose, no code fences) containing exactly these fields:
+    {
+      "thought": "<short reasoning about the next step>",
+      "python_code": "<exactly one async Python browser step, or empty string when declaring done>",
+      "done": false,
+      "final_response": ""
+    }
+
+environment:
+  environment_class: local_browser
+  # cloak_launch:     fresh stealth Chromium per run (no saved cookies).
+  # cloak_persistent: stealth Chromium backed by user_data_dir (keeps sessions).
+  browser_mode: cloak_launch
+
+  # --- Stealth behavior ---
+  cloak_humanize: true          # human-like mouse/keyboard/scroll (in-process)
+  cloak_human_preset: default   # "default" | "careful"
+  cloak_stealth_args: true      # CloakBrowser's source-level fingerprint flags
+  cloak_geoip: false            # set true WITH cloak_proxy to match tz/locale to exit IP
+  # cloak_proxy: "http://user:pass@residential-host:port"
+  # cloak_timezone: "America/New_York"
+  # cloak_locale: "en-US"
+
+  # Headless passes most C++ fingerprint checks, but the hardest behavioral
+  # sites still detect headless. Flip to false (run under Xvfb in a container)
+  # for maximum evasion.
+  headless: true
+
+agent:
+  # No artifact-based verification in live mode; the model decides when done.
+  require_self_reflection_success: false
+  # Keep only the most recent observation's ARIA snapshot to bound tokens.
+  keep_last_n_observations: 1
+  summary_user_prompt: |
+    You are about to have your working context compacted to save tokens.
+
+    Write a concise but COMPLETE summary of everything relevant from the conversation above so that a
+    fresh agent with only this summary (plus the original system prompt and task instructions) can
+    continue driving the live stealth browser without losing progress. Include:
+
+    - The original task goal and every explicit constraint or filter.
+    - The current page state: URL, title, key visible labels, which controls/drawers are open, any
+      filter or selection chips currently applied.
+    - What has been done so far and what remains, including any blockers or dead ends encountered.
+    - Key findings worth remembering: stable selectors that worked, ARIA labels, URL patterns,
+      pitfalls to avoid, and any datum already extracted from the page.
+    - The next concrete browser action to take.
+
+    Write the summary as plain prose and bullet lists. Do NOT issue a new `python_code`. Do NOT set done=true.
