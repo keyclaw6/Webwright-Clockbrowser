@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Webwright run artifacts
+outputs/
+final_runs/
+*.log
+
+# CloakBrowser cache (stealth binary is downloaded at runtime)
+.cloakbrowser/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
